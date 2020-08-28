@@ -1,69 +1,107 @@
-read <- function(path, ..., FUN_string=NULL, args_csv=list(), args_excel=list(), excel=c(NA, FALSE, TRUE), s3=c(NA, FALSE, TRUE))
+read <- function(path, ..., read_function = NULL, args_csv = list(), args_excel = list(), excel = c(NA, FALSE, TRUE), remote = c(NA, FALSE, TRUE), remote_function = s3tools::read_using)
 {
   # Coerce input parameters
   path <- unlist(path)[[1]]
   MoreArgs <- list(...)
   args_csv <- as.list(args_csv)
   args_excel <- as.list(args_excel)
-  FUN_string <- unlist(FUN_string)[[1]]
+  tryCatch(
+    {
+      # Keep unpacking the first elements of read_function until you reach a function or error
+      read_function <- unlist(list(eval(parse(text=expression(read_function)))))[[1]]
+      while (!is.function(read_function) && any(nchar(read_function)) %in% TRUE)
+        read_function <- unlist(list(eval(parse(text=read_function))))[[1]]
+    },
+    error=function(e)
+    {
+      stop(e$message, "\n  Could not find the read_function", call.=FALSE)
+    }
+  )
   excel <- unlist(excel)[[1]]
-  s3 <- unlist(s3)[[1]]
-  # Decide what function to use to read the file specified in 'path', using the function given by FUN_string if it is not empty, or else using read_excel if 'excel' is TRUE, fread if it is FALSE, or using the file extension to decide if 'excel' is neither TRUE nor FALSE
-  if (any(nchar(FUN_string)) %in% TRUE)
+  remote <- unlist(remote)[[1]]
+  # Decide what function to use to read the file specified in 'path', using the function given by read_function if it is not empty, or else using read_excel if 'excel' is TRUE, fread if it is FALSE, or using the file extension to decide if 'excel' is neither TRUE nor FALSE
+  if (is.function(read_function))
   {
     package <- character(0)
-    FUN_string <- as.character(FUN_string)
     Args <- c(path, MoreArgs)
-    df_FUN <- identity
-  }
-  else if (excel %in% TRUE || !excel %in% FALSE && substr(path,regexpr("\\.[^\\.]*$",path),nchar(path)) %in% c(".xls",".xlt",".xla",".xlsx",".xlsm",".xlsb","xltx","xltm",".xlam",".xlw",".xlr",".xml",".ods"))
-  {
-    file_type <- "spreadsheet"
-    package <- "readxl"
-    FUN_string <- "readxl::read_excel"
-    Args <- c(path, args_excel, MoreArgs[names(MoreArgs) %in% names(formals(eval(parse(text=FUN_string))))])
-    df_FUN <- as.data.frame
+    df_function <- identity
   }
   else
-  {
-    file_type <- "text"
-    package <- "data.table"
-    FUN_string <- "data.table::fread"
-    Args <- c(path, args_csv, MoreArgs[names(MoreArgs) %in% names(formals(eval(parse(text=FUN_string))))])
-    df_FUN <- as.data.frame
-  }
-  # Try to read the file locally if s3 is FALSE, or from an S3 bucket if it is TRUE, or try both (locally first) if it is neither TRUE nor FALSE; only send arguments in ... with names that the chosen function accepts; give an error message if the file cannot be read
+    tryCatch(
+      {
+        if (excel %in% TRUE || !excel %in% FALSE && substr(path,regexpr("\\.[^\\.]*$",path),nchar(path)) %in% c(".xls",".xlt",".xla",".xlsx",".xlsm",".xlsb","xltx","xltm",".xlam",".xlw",".xlr",".xml",".ods"))
+        {
+          file_type <- "spreadsheet"
+          package <- "readxl"
+          read_function <- readxl::read_excel
+          Args <- c(path, args_excel)
+        }
+        else
+        {
+          file_type <- "text"
+          package <- "data.table"
+          read_function <- data.table::fread
+          Args <- c(path, args_csv)
+        }
+        Args <- c(Args, MoreArgs[names(MoreArgs) %in% names(formals(read_function))])
+        df_function <- as.data.frame
+      },
+      error=function(e)
+      {
+        stop(e$message, "\n  You need to install the ", package, " package if you want to read ", file_type, " files without specifying the read_function to use - try running install.packages(\"", package, "\")", call.=FALSE)
+      }
+    )
+  # Try to read the file locally if remote is FALSE, or from a remote source (e.g. S3 Bucket) if it is TRUE, or try both (locally first) if it is neither TRUE nor FALSE; only send arguments in ... with names that the chosen function accepts; give an error message if the file cannot be read
   tryCatch(
-    if (!s3 %in% TRUE)
-      df_FUN(do.call(eval(parse(text=FUN_string)), Args))
+    if (!remote %in% TRUE)
+      df_function(do.call(read_function, Args))
     else
       stop(),
     error=function(e)
     {
-      if (!s3 %in% FALSE)
+      if (!remote %in% FALSE)
       {
         tryCatch(
-          df_FUN(do.call(s3tools::read_using, c(eval(parse(text=FUN_string)), Args))),
+          {
+            # Keep unpacking the first elements of remote_function until you reach a function or error
+            remote_function <- unlist(list(eval(parse(text=expression(remote_function)))))[[1]]
+            while (!is.function(remote_function) && any(nchar(remote_function)) %in% TRUE)
+              remote_function <- unlist(list(eval(parse(text=remote_function))))[[1]]
+            if (!is.function(remote_function))
+              stop()
+          },
           error=function(e2)
           {
-            stop(if (!s3 %in% TRUE) paste0("In ", FUN_string, "(path, ...) : ", e$message, if (!all(package %in% rownames(installed.packages()))) paste0("\n       You need to install the ", package, " package if you want to read ", file_type, " files without specifying the function to use in FUN_string - try running install.packages(\"", package, "\")"), "\n       "), "In s3tools::read_using(", FUN_string, ", path, ...) : ", e2$message, if (!"s3tools" %in% rownames(installed.packages())) "\n       You need to install the s3tools package if you want to read files from s3 buckets with this function - try running install.packages(\"remotes\") followed by remotes::install_github(\"moj-analytical-services/s3tools\")", call.=FALSE)
+            stop(if (!remote %in% TRUE) paste0(e$message, "\n  Failed to read file locally\n\n Error: "), e2$message, "\n  Failed to read file remotely: ", if (all(as.list(match.call(definition=sys.function(1),call=sys.call(1),expand.dots=FALSE))$remote_function=="s3tools::read_using")) "You need to install the s3tools package if you want to read files remotely from S3 Buckets without specifying the remote_function to use - try running install.packages(\"remotes\") followed by remotes::install_github(\"moj-analytical-services/s3tools\")" else "Could not find the remote_function", call.=FALSE)
+          }
+        )
+        tryCatch(
+          {
+            if (is.function(remote_function))
+              df_function(do.call(remote_function, c(read_function, Args)))
+            else
+              stop()
+          },
+          error=function(e2)
+          {
+            stop(if (!remote %in% TRUE) paste0(e$message, "\n  Failed to read file locally\n\n Error: "), e2$message, "\n  Failed to read file remotely", call.=FALSE)
           }
         )
       }
       else
-        stop("In ", FUN_string, "(path, ...) : ", e$message, if (!all(package %in% rownames(installed.packages()))) paste0("\n       You need to install the ", package, " package if you want to read ", file_type, " files without specifying the function to use in FUN_string - try running install.packages(\"", package, "\")"), call.=FALSE)
+        stop(e$message, "\n  Failed to read file locally", call.=FALSE)
     }
   )
-# Usage: df <- read(path, ..., FUN_string=NULL, args_csv=list(), args_excel=list(), excel=c(NA, FALSE, TRUE), s3=c(NA, FALSE, TRUE))
+# Usage: df <- read(path, ..., read_function=NULL, args_csv=list(), args_excel=list(), excel=c(NA, FALSE, TRUE), remote=c(NA, FALSE, TRUE), remote_function="s3tools::read_using")
 # This function reads data from a file into a data frame using either 'data.table::fread' or 'readxl::read_excel' by default based on the file extension (in which case the resulting data table or tibble will be made into a simple data frame), or reads it using a function specified in 'FUN_string' if provided (in which case the output class will be unchanged, e.g. you will get a data table if you enter FUN_string="data.table::fread")
 # The object given by 'path' will be the first input to whatever function is used to read the file (usually the file path, but can be something fancier when using 'fread'; the first input may have different names in different functions but that doesn't matter)
-# The objects given by '...' will be any other arguments to whatever function is being used to read the file (NB: these don't always have the same names in different functions, so only those options that have the right names will be passed in - if you are calling this function repeatedly on a mixture of Excel and CSV files with the same options where names are the same, you can pass in the options for both types and they will be used appropriately, e.g. you can say which values should be changed to NA by passing in 'na' and 'na.strings' and it will be understood by 'read_excel', 'fread', 'read_csv' and 'read.csv', and you can pass in both 'header' and 'col_names' to specify whether a header row should be read in 'fread', 'read.csv', 'read_excel' and 'read_csv'; if FUN_string is not provided, partial matching is not allowed on ...)
-# If 'FUN_string' is provided (as a string), then the function specified in that string will be used to read the file (along with the arguments in ..., with partial matching allowed); if not, 'excel' will be used to determine whether to use 'read_excel' (if TRUE) or 'fread' (if FALSE), and if 'excel' is neither TRUE nor FALSE (NA is the default) then the file extension will be used to determine which of the two functions should be used
-# If FUN_string is not provided, you can provide separate options for CSV and Excel files as lists using args_csv (for fread) and args_excel (for read_excel), with partial matching allowed, and these will be added to the appropriate options in ... (remember not to specify options in ... if they are in args_csv or args_excel)
-# If 's3' is TRUE, the function 's3tools::read_using' will be used to look for the file in an S3 bucket location specified by 'path'; if 's3' is FALSE, the file will be sought locally using 'path'; if 's3' is neither TRUE nor FALSE (NA is the default), a local file will be sought first, followed by an S3 bucket location if that fails
+# The objects given by '...' will be any other arguments to whatever function is being used to read the file (NB: these don't always have the same names in different functions, so only those options that have the right names will be passed in - if you are calling this function repeatedly on a mixture of Excel and CSV files with the same options where names are the same, you can pass in the options for both types and they will be used appropriately, e.g. you can say which values should be changed to NA by passing in 'na' and 'na.strings' and it will be understood by 'read_excel', 'fread', 'read_csv' and 'read.csv', and you can pass in both 'header' and 'col_names' to specify whether a header row should be read in 'fread', 'read.csv', 'read_excel' and 'read_csv'; if read_function is not provided, partial matching is not allowed on ...)
+# If 'read_function' is provided (as a function or string containing function name), then the function specified will be used to read the file (along with the arguments in ..., with partial matching allowed); if not, 'excel' will be used to determine whether to use 'read_excel' (if TRUE) or 'fread' (if FALSE), and if 'excel' is neither TRUE nor FALSE (NA is the default) then the file extension will be used to determine which of the two functions should be used
+# If read_function is not provided, you can provide separate options for CSV and Excel files as lists using args_csv (for fread) and args_excel (for read_excel), with partial matching allowed, and these will be added to the appropriate options in ... (remember not to specify options in ... if they are in args_csv or args_excel)
+# If 'remote' is TRUE, the 'remote_function' (default 's3tools::read_using') will be used to look for the file in a remote location (e.g. S3 Bucket) specified by 'path', assuming that the 'remote_function' takes the 'read_function' as its first argument and the 'path' as its second; if 'remote' is FALSE, the file will be sought locally using 'path'; if 'remote' is neither TRUE nor FALSE (NA is the default), a local file will be sought first, followed by a remote location if that fails
 }
 
-tidyup <- function(.data, header_names=".", grep_header_names=TRUE, case_header_names=TRUE, all_header_names=TRUE, unique_headers=TRUE, clean_headers=FALSE, lower_case_headers=FALSE, na_strings="", grep_na_strings=FALSE, case_na_strings=TRUE, remove_na_rows=TRUE, remove_na_cols=TRUE)
+tidyup <- function(.data, header_names = ".", grep_header_names = TRUE, case_header_names = TRUE, all_header_names = TRUE, unique_headers = TRUE, clean_headers = FALSE, lower_case_headers = FALSE, na_strings = "", grep_na_strings = FALSE, case_na_strings = TRUE, remove_na_rows = TRUE, remove_na_cols = TRUE)
 {
   # Coerce input parameters
   tryCatch(
