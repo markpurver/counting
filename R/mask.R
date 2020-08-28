@@ -1,4 +1,4 @@
-suppress <- function(.data, group_cols=NULL, set_cols=NULL, ignore_if=NULL, suppress_if=NULL, suppress_group_if=NULL, suppress_while=NULL, suppress_order=NULL, groups_equivalent_if=NULL, suppress_equivalent_while=suppress_while)
+suppress <- function(.data, group_cols = NULL, set_cols = NULL, ignore_if = NULL, suppress_if = NULL, suppress_group_if = NULL, suppress_while = NULL, suppress_order = NULL, groups_equivalent_if = NULL, suppress_equivalent_while = suppress_while)
 {
   # Make the data into a data frame if it isn't already
   tryCatch(
