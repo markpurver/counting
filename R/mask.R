@@ -26,7 +26,7 @@ suppress <- function(.data, group_cols = NULL, set_cols = NULL, ignore_if = NULL
       }
       else if (length(group_set_cols)==length(group_cols))
       {
-        group_set_data <- cbind(group_set_data, .data.frame(rep(NA,nrow(.data))))
+        group_set_data <- cbind(group_set_data, data.frame(rep(NA,nrow(.data))))
       }
       if (nrow(group_set_data)!=nrow(.data))
         stop("Neither group_cols nor set_cols gives the same number of rows as the data", call.=FALSE)
