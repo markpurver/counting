@@ -183,7 +183,7 @@ suppress <- function(.data, group_cols = NULL, set_cols = NULL, ignore_if = NULL
                 },
                 groups_list[groups_order], while_conds[groups_order], MoreArgs=list(suppress_order[mask_ignore], .data[mask_ignore,,drop=FALSE])
               ))
-              print(sum(!(is.na(mask_current)&is.na(mask_previous) | !is.na(mask_current)&!is.na(mask_previous)&mask_current==mask_previous)))
+              #print(sum(!(is.na(mask_current)&is.na(mask_previous) | !is.na(mask_current)&!is.na(mask_previous)&mask_current==mask_previous)))
               if (!all(is.na(mask_current)&is.na(mask_previous) | !is.na(mask_current)&!is.na(mask_previous)&mask_current==mask_previous))
                 mask_previous <- mask_current
               else
