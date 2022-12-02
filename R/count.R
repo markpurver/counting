@@ -148,7 +148,7 @@ counts <- function(.data, ..., .drop = FALSE)
 counts_unpack <- function(...)
 {
   inputs_list2 <- as.list(match.call(expand.dots=FALSE)$`...`)
-  print(inputs_list2)
+  # print(inputs_list2)
   inputs_list <- list(...)
   # Initial value of output, only used if there is no meaningful input
   outputs_list <- character(0)
@@ -189,7 +189,7 @@ counts_unpack <- function(...)
     ))
     outputs_list <- as.expression(paste0("list(\n  ", paste0(outputs_list, collapse=",\n  "), "\n", ")"))
   }
-  print(outputs_list)
+  # print(outputs_list)
   outputs_list
 }
 # Blank names to be amended? Support unquoting? Error messages.
